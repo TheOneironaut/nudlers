@@ -4,6 +4,7 @@ import * as scraperUtils from '../pages/api/utils/scraperUtils';
 import scrapeEventsHandler from '../pages/api/scrape-events/index';
 import getScrapeReportHandler from '../pages/api/scrape-events/[id]/report';
 import scrapeHandler from '../pages/api/scrapers/run';
+import scrapeStreamHandler from '../pages/api/scrapers/run-stream';
 
 // Mock the database module
 vi.mock('../pages/api/db', () => ({
@@ -189,7 +190,56 @@ describe('Sync Reporting and Audit', () => {
         });
     });
 
+    describe('stream lifecycle', () => {
+        const request = { method: 'POST', body: {
+            options: { companyId: 'isracard', startDate: '2023-01-01' },
+            credentials: { username: 'fixture', password: 'fixture' }, credentialId: 1,
+        } };
+
+        it('finishes the background scrape after the SSE client disconnects', async () => {
+            (scraperUtils.runScraper as any).mockImplementation(async () => {
+                const close = mockRes.on.mock.calls.find(([event]: any[]) => event === 'close')[1];
+                mockRes.destroyed = true;
+                close();
+                return { success: true, accounts: [] };
+            });
+            await scrapeStreamHandler(request, mockRes);
+            expect(scraperUtils.runScraper).toHaveBeenCalledTimes(1);
+            expect(scraperUtils.processScrapedAccounts).toHaveBeenCalledTimes(1);
+            expect(scraperUtils.updateScrapeAudit).toHaveBeenCalledWith(
+                mockClient, 123, 'success', expect.any(String), expect.any(Object), 0, expect.any(Number)
+            );
+            expect(mockClient.release).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not restart an explicitly cancelled stream scrape', async () => {
+            (scraperUtils.getScrapeRetries as any).mockResolvedValue(3);
+            (scraperUtils.runScraper as any).mockRejectedValue(
+                Object.assign(new Error('Scraping cancelled by user'), { code: 'SCRAPE_CANCELLED' })
+            );
+            await scrapeStreamHandler(request, mockRes);
+            expect(scraperUtils.runScraper).toHaveBeenCalledTimes(1);
+            expect(scraperUtils.processScrapedAccounts).not.toHaveBeenCalled();
+            expect(scraperUtils.updateScrapeAudit).not.toHaveBeenCalled();
+            expect(mockClient.release).toHaveBeenCalledTimes(1);
+        });
+    });
+
     describe('API: /api/scrape', () => {
+        it('does not retry cancellation or overwrite the cancelled audit', async () => {
+            (scraperUtils.getScrapeRetries as any).mockResolvedValue(3);
+            (scraperUtils.runScraper as any).mockRejectedValue(
+                Object.assign(new Error('Scraping cancelled by user'), { code: 'SCRAPE_CANCELLED' })
+            );
+            await scrapeHandler({ method: 'POST', body: {
+                options: { companyId: 'hapoalim', startDate: '2023-01-01' },
+                credentials: { username: 'fixture', password: 'fixture' },
+            } }, mockRes);
+            expect(scraperUtils.runScraper).toHaveBeenCalledTimes(1);
+            expect(scraperUtils.updateScrapeAudit).not.toHaveBeenCalled();
+            expect(mockRes.status).toHaveBeenCalledWith(409);
+        });
+
         it('should call updateScrapeAudit with stats on success', async () => {
             const mockStats = { savedTransactions: 10, processedTransactions: [] };
 

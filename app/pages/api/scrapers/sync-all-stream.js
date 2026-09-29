@@ -225,6 +225,7 @@ export default async function handler(req, res) {
                     break; // Success - exit retry loop
 
                 } catch (scrapeError) {
+                    if (scrapeError.code === 'SCRAPE_CANCELLED') throw scrapeError;
                     lastError = scrapeError.message || 'Unknown error';
 
                     if (attempt < maxRetries) {

@@ -41,7 +41,8 @@ export function registerActiveSession(page, companyId, onProgress) {
 /**
  * Clear the active scraper session
  */
-export function clearActiveSession() {
+export function clearActiveSession(page) {
+    if (arguments.length && global.scraperActiveSession.page !== page) return;
     global.scraperActiveSession = { page: null, companyId: null, onProgress: null };
 }
 

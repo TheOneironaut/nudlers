@@ -394,6 +394,11 @@ async function handler(req, res) {
         break;
 
       } catch (scrapeError) {
+        if (scrapeError.code === 'SCRAPE_CANCELLED') {
+          sendSSE(res, 'error', { type: 'CANCELLED', message: scrapeError.message, retryable: false });
+          if (!res.finished) res.end();
+          return;
+        }
         lastError = scrapeError.message;
         const classified = classifyScrapeError({
           thrownError: scrapeError,
