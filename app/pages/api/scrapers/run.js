@@ -155,6 +155,7 @@ async function handler(req, res) {
         }
 
       } catch (scrapeError) {
+        if (scrapeError.code === 'SCRAPE_CANCELLED') throw scrapeError;
         lastError = scrapeError.message || 'Scraper exception';
 
         if (attempt < maxRetries) {
@@ -238,6 +239,9 @@ async function handler(req, res) {
       durationSeconds
     });
   } catch (error) {
+    if (error.code === 'SCRAPE_CANCELLED') {
+      return res.status(409).json({ error: error.message, code: error.code });
+    }
     logger.error({
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,

@@ -190,6 +190,20 @@ describe('Sync Reporting and Audit', () => {
     });
 
     describe('API: /api/scrape', () => {
+        it('does not retry cancellation or overwrite the cancelled audit', async () => {
+            (scraperUtils.getScrapeRetries as any).mockResolvedValue(3);
+            (scraperUtils.runScraper as any).mockRejectedValue(
+                Object.assign(new Error('Scraping cancelled by user'), { code: 'SCRAPE_CANCELLED' })
+            );
+            await scrapeHandler({ method: 'POST', body: {
+                options: { companyId: 'hapoalim', startDate: '2023-01-01' },
+                credentials: { username: 'fixture', password: 'fixture' },
+            } }, mockRes);
+            expect(scraperUtils.runScraper).toHaveBeenCalledTimes(1);
+            expect(scraperUtils.updateScrapeAudit).not.toHaveBeenCalled();
+            expect(mockRes.status).toHaveBeenCalledWith(409);
+        });
+
         it('should call updateScrapeAudit with stats on success', async () => {
             const mockStats = { savedTransactions: 10, processedTransactions: [] };
 
